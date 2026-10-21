@@ -1,0 +1,40 @@
+name: Build NeoDev APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.9
+
+      - name: Insert Gemini key from repository secret (optional)
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -n "$GEMINI_API_KEY" ]; then
+            sed -i "s|Your API Key|$GEMINI_API_KEY|" app/src/main/java/com/cusil/neodev/Config.kt
+            echo "Gemini key inserted from secret"
+          else
+            echo "No GEMINI_API_KEY secret set, building as-is"
+          fi
+
+      - name: Build debug APK
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NeoDev-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
