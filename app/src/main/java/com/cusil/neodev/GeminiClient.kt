@@ -58,14 +58,25 @@ class GeminiClient(
         }
         val body = bodyJson.toString()
 
-        val models = listOf(model(), Config.FALLBACK_MODEL).distinct()
+        // Busy servers (500/502/503/504): retry twice, then try the next model. 404/429: go straight to the next model.
+        val models = listOf(model(), Config.FALLBACK_MODEL, "gemini-2.5-flash-lite").distinct()
         var lastError: AppException? = null
         for (m in models) {
-            try {
-                return call(m, k, body)
-            } catch (e: AppException) {
-                lastError = e
-                if (e.code != 404 && e.code != 429) throw e
+            var attempt = 0
+            while (true) {
+                try {
+                    return call(m, k, body)
+                } catch (e: AppException) {
+                    lastError = e
+                    val busy = e.code == 500 || e.code == 502 || e.code == 503 || e.code == 504
+                    if (busy && attempt < 2) {
+                        attempt++
+                        Thread.sleep(2000L * attempt)
+                        continue
+                    }
+                    if (busy || e.code == 404 || e.code == 429) break
+                    throw e
+                }
             }
         }
         throw lastError ?: AppException("Gemini request failed.")
@@ -91,6 +102,7 @@ class GeminiClient(
                         403 -> "Gemini key not allowed: $msg"
                         404 -> "Model $model was not found."
                         429 -> "Free Gemini quota reached for $model. Wait a bit or pick another model in Settings."
+                        500, 502, 503, 504 -> "Google's Gemini servers are busy right now. Try again in a minute."
                         else -> "Gemini error ${r.code}: $msg"
                     }
                     throw AppException(nice, r.code)
