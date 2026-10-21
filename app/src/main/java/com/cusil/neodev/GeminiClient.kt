@@ -17,17 +17,26 @@ class GeminiClient(
 ) {
     private val http = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(120, TimeUnit.SECONDS)
+        .readTimeout(300, TimeUnit.SECONDS)
         .build()
 
     private val jsonType = "application/json; charset=utf-8".toMediaType()
 
-    fun ask(system: String, history: List<ChatMsg>, prompt: String): String {
+    /** Normal text answer. */
+    fun ask(system: String, history: List<ChatMsg>, prompt: String): String =
+        run(system, history, prompt, false)
+
+    /** Answer forced into JSON, with a large output budget. Used by the project builder. */
+    fun askJson(system: String, history: List<ChatMsg>, prompt: String): String =
+        run(system, history, prompt, true)
+
+    private fun run(system: String, history: List<ChatMsg>, prompt: String, json: Boolean): String {
         val k = key()
         if (k.isBlank()) throw AppException("No Gemini key yet. Add one in Settings.")
 
         val contents = JSONArray()
-        for (m in history.takeLast(10)) {
+        // The API wants a conversation that starts with the user.
+        for (m in history.dropWhile { !it.fromUser }.takeLast(12)) {
             contents.put(
                 JSONObject()
                     .put("role", if (m.fromUser) "user" else "model")
@@ -38,10 +47,16 @@ class GeminiClient(
             JSONObject().put("role", "user")
                 .put("parts", JSONArray().put(JSONObject().put("text", prompt)))
         )
-        val body = JSONObject()
+        val bodyJson = JSONObject()
             .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
             .put("contents", contents)
-            .toString()
+        if (json) {
+            bodyJson.put(
+                "generationConfig",
+                JSONObject().put("responseMimeType", "application/json").put("maxOutputTokens", 32768)
+            )
+        }
+        val body = bodyJson.toString()
 
         val models = listOf(model(), Config.FALLBACK_MODEL).distinct()
         var lastError: AppException? = null

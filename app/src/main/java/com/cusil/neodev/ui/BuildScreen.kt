@@ -209,8 +209,13 @@ fun BuildScreen(vm: AppViewModel) {
                                 fontSize = 11.sp
                             )
                         }
-                        Button(onClick = { vm.askBuildAdvice() }, enabled = !vm.adviceBusy) {
-                            Text(if (vm.adviceBusy) "Asking AI…" else "Ask AI how to fix it")
+                        Button(
+                            onClick = { vm.fixBuildWithBuilder() },
+                            enabled = vm.hasAiKey(),
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Let NeoDev fix it") }
+                        OutlinedButton(onClick = { vm.askBuildAdvice() }, enabled = !vm.adviceBusy) {
+                            Text(if (vm.adviceBusy) "Asking AI…" else "Only explain the error")
                         }
                     }
                     val advice = vm.buildAdvice

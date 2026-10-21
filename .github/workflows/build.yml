@@ -20,6 +20,12 @@ jobs:
         with:
           gradle-version: 8.9
 
+      - name: Keep the same signing key between builds
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: debug-keystore-${{ github.repository }}
+
       - name: Insert Gemini key from repository secret (optional)
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}

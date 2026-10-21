@@ -17,7 +17,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
 
-enum class Screen { Home, Settings, Clone, NewProject, Workspace, Git, Build }
+enum class Screen { Home, Settings, Clone, NewProject, Workspace, Git, Build, Builder }
 
 class EditorTab(val path: String, val file: File, initial: String) {
     var value by mutableStateOf(TextFieldValue(initial))
@@ -73,6 +73,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             Screen.Workspace -> { saveAll(); closeProject(); screen = Screen.Home }
             Screen.Git -> { screen = Screen.Workspace; refreshTree() }
             Screen.Build -> { stopPolling(); screen = Screen.Workspace; refreshTree() }
+            Screen.Builder -> { screen = Screen.Workspace; refreshTree(); reloadTabs() }
             else -> screen = Screen.Home
         }
     }
@@ -109,7 +110,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         screen = Screen.Home
     }
 
-    fun createProject(rawName: String, kind: String) {
+    fun createProject(rawName: String, kind: String, withAi: Boolean = false) {
         val clean = store.sanitize(rawName)
         if (clean.isBlank()) { say("Enter a project name (letters, numbers, - _ .)."); return }
         work("Creating project…") {
@@ -117,6 +118,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             store.createFiles(name, Templates.files(kind, name))
             refreshProjects()
             openProject(name)
+            if (withAi) startBuilder()
         }
     }
 
@@ -587,6 +589,130 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         } finally {
             zip.delete()
         }
+    }
+
+    // ------------------------------------------------------------------ builder chat
+
+    val builderMessages = mutableStateListOf<ChatMsg>()
+    var builderBusy by mutableStateOf(false)
+    var builderKind by mutableStateOf("generic")
+    var lastChange by mutableStateOf<List<FileChange>?>(null)
+
+    fun hasAiKey(): Boolean = prefs.effectiveGeminiKey().isNotBlank()
+
+    fun startBuilder() {
+        saveAll()
+        builderKind = BuilderEngine.kindOf(store, project)
+        builderMessages.clear()
+        val saved = store.loadChat(project)
+        if (saved.isEmpty()) {
+            builderMessages.add(ChatMsg(false, BuilderEngine.greeting(builderKind, project, prefs.githubLogin)))
+        } else {
+            builderMessages.addAll(saved)
+        }
+        lastChange = null
+        screen = Screen.Builder
+    }
+
+    fun sendBuilder(text: String, display: String? = null) {
+        if (builderBusy || text.isBlank()) return
+        if (!hasAiKey()) { say("Add your Gemini key in Settings first."); return }
+        saveAll()
+        val history = builderMessages.toList()
+        builderMessages.add(ChatMsg(true, display ?: text))
+        builderBusy = true
+        val name = project
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val prompt = text + "\n\n" + BuilderEngine.context(store, name)
+                val raw = gemini.askJson(BuilderEngine.system(BuilderEngine.kindOf(store, name), name), history, prompt)
+                val parsed = BuilderEngine.parse(raw)
+                val result = BuilderEngine.apply(store, name, parsed)
+                lastChange = if (result.changes.isEmpty()) null else result.changes
+                val sb = StringBuilder(parsed.reply.ifBlank { "Done." })
+                if (result.changes.isNotEmpty()) {
+                    sb.append("\n\nFiles:")
+                    for (c in result.changes) {
+                        val mark = if (c.old == null) "+" else if (c.new == null) "-" else "~"
+                        sb.append("\n").append(mark).append(" ").append(c.path)
+                    }
+                }
+                if (result.skipped.isNotEmpty()) {
+                    sb.append("\n\nSkipped unsafe paths: ").append(result.skipped.joinToString(", "))
+                }
+                builderMessages.add(ChatMsg(false, sb.toString()))
+                store.saveChat(name, builderMessages.toList())
+                if (project == name) {
+                    refreshTree()
+                    reloadTabs()
+                }
+            } catch (e: Exception) {
+                builderMessages.add(ChatMsg(false, "⚠ " + (e.message ?: "Something went wrong.")))
+            } finally {
+                builderBusy = false
+            }
+        }
+    }
+
+    fun undoLastChange() {
+        val c = lastChange ?: return
+        BuilderEngine.revert(store, project, c)
+        lastChange = null
+        builderMessages.add(ChatMsg(false, "Reverted the last change."))
+        store.saveChat(project, builderMessages.toList())
+        refreshTree()
+        reloadTabs()
+    }
+
+    /** One tap: create the GitHub repo if needed, push, start the workflow and show the run. */
+    fun buildNow() = work("Preparing build…") {
+        saveAll()
+        var m = store.loadMeta(project)
+        if (!m.linked) {
+            sync.createAndLink(project, store.sanitize(project), true) { busy = it }
+            m = store.loadMeta(project)
+        }
+        meta = m
+        if (!store.changes(project).isEmpty) {
+            sync.push(project, "Update from NeoDev", authorName(), authorEmail(), null) { busy = it }
+        }
+        meta = store.loadMeta(project)
+
+        val wfName = File(store.dir(project), ".github/workflows").listFiles()
+            ?.map { it.name }?.firstOrNull { it.startsWith("neodev-") }
+            ?: throw AppException("This project has no build workflow yet. Open Build and add one.")
+        var wf: GhWorkflow? = null
+        for (i in 1..6) {
+            busy = "Waiting for GitHub…"
+            wf = api.listWorkflows(meta.owner, meta.repo).firstOrNull { it.path.endsWith(wfName) }
+            if (wf != null) break
+            Thread.sleep(2500)
+        }
+        val w = wf ?: throw AppException("GitHub hasn't registered the workflow yet. Open Build and press Refresh.")
+        busy = "Starting build…"
+        api.dispatch(meta.owner, meta.repo, w.id, meta.branch)
+        Thread.sleep(3500)
+        workflows = api.listWorkflows(meta.owner, meta.repo)
+        runs = api.listRuns(meta.owner, meta.repo)
+        jobs = emptyList()
+        artifacts = emptyList()
+        selectedRun = null
+        logText = null
+        buildAdvice = null
+        downloaded = null
+        screen = Screen.Build
+        runs.firstOrNull()?.let { selectRunNow(it) }
+        startPolling()
+    }
+
+    fun fixBuildWithBuilder() {
+        val log = logText ?: return
+        startBuilder()
+        sendBuilder(
+            "The GitHub Actions build failed. Fix the project so it builds, changing as little as needed. " +
+                "Error log:\n```\n" + log.takeLast(10000) + "\n```",
+            "Fix the failed build"
+        )
     }
 
     // ------------------------------------------------------------------ AI

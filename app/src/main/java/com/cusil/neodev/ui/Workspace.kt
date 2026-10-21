@@ -412,7 +412,7 @@ private fun AiPanel(vm: AppViewModel, modifier: Modifier) {
             )
             SmallBtn("Explain", enabled = !vm.aiBusy) { vm.aiExplain() }
             SmallBtn("Fix", enabled = !vm.aiBusy) { vm.aiFix() }
-            SmallBtn("Clear") { vm.aiMessages.clear() }
+            SmallBtn("Builder") { vm.startBuilder() }
             SmallBtn("✕") { vm.aiOpen = false }
         }
         LazyColumn(

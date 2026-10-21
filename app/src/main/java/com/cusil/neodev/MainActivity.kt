@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cusil.neodev.ui.BusyOverlay
+import com.cusil.neodev.ui.BuilderScreen
 import com.cusil.neodev.ui.BuildScreen
 import com.cusil.neodev.ui.CloneScreen
 import com.cusil.neodev.ui.GitScreen
@@ -62,6 +63,7 @@ fun Root(vm: AppViewModel = viewModel()) {
             Screen.Workspace -> WorkspaceScreen(vm)
             Screen.Git -> GitScreen(vm)
             Screen.Build -> BuildScreen(vm)
+            Screen.Builder -> BuilderScreen(vm)
         }
         SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp))
         val label = vm.busy

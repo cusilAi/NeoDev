@@ -8,6 +8,8 @@ A code editor for your phone: edit files, push to GitHub, run GitHub Actions bui
 - Commit and push, pull latest, create a new GitHub repository from a local project
 - Build screen: run workflows, watch live steps, read failed logs, ask AI to explain the failure
 - Download the built APK (or JAR) to Downloads/NeoDev, install it, or share it
+- Create with AI: describe an app in a chat and NeoDev writes the whole project, then changes it whenever you ask (needs a Gemini key)
+- One-tap Build: creates the GitHub repo if needed, pushes, runs the workflow and shows the build; if it fails, "Let NeoDev fix it" repairs the project from the error log
 - AI helper (Gemini): explain a file, fix problems, ask questions, apply the returned code
 
 ## Build it
@@ -25,3 +27,7 @@ Users can always enter their own key in Settings, which overrides the built-in o
 
 ## GitHub token
 Create a classic token with the repo and workflow scopes and paste it in NeoDev Settings.
+
+## Updating the installed app
+Builds keep the same signing key through a cache, so new versions install over old ones.
+The very first update from an older build may need one uninstall (push your projects to GitHub first).

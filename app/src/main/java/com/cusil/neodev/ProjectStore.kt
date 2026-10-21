@@ -1,6 +1,7 @@
 package com.cusil.neodev
 
 import android.content.Context
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
@@ -28,6 +29,7 @@ class ChangeSet(
 class ProjectStore(context: Context) {
     val root = File(context.filesDir, "projects").apply { mkdirs() }
     private val metaDir = File(context.filesDir, "meta").apply { mkdirs() }
+    private val chatDir = File(context.filesDir, "chats").apply { mkdirs() }
 
     fun names(): List<String> =
         (root.listFiles() ?: emptyArray())
@@ -86,6 +88,29 @@ class ProjectStore(context: Context) {
     fun delete(name: String) {
         dir(name).deleteRecursively()
         File(metaDir, "$name.json").delete()
+        File(chatDir, "$name.json").delete()
+    }
+
+    fun loadChat(name: String): List<ChatMsg> {
+        val f = File(chatDir, "$name.json")
+        if (!f.exists()) return emptyList()
+        return try {
+            val arr = JSONArray(f.readText())
+            val out = ArrayList<ChatMsg>()
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                out.add(ChatMsg(o.optBoolean("u"), o.optString("t")))
+            }
+            out
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    fun saveChat(name: String, msgs: List<ChatMsg>) {
+        val arr = JSONArray()
+        for (m in msgs.takeLast(60)) arr.put(JSONObject().put("u", m.fromUser).put("t", m.text))
+        File(chatDir, "$name.json").writeText(arr.toString())
     }
 
     fun createFiles(name: String, files: Map<String, String>) {

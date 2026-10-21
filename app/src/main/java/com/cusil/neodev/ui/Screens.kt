@@ -263,6 +263,7 @@ fun CloneScreen(vm: AppViewModel) {
 fun NewProjectScreen(vm: AppViewModel) {
     var name by remember { mutableStateOf("") }
     var kind by remember { mutableStateOf("android") }
+    var needKey by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
         Header("New project", { vm.back() })
@@ -287,9 +288,36 @@ fun NewProjectScreen(vm: AppViewModel) {
                     Text(label, Modifier.weight(1f))
                 }
             }
-            Button(onClick = { vm.createProject(name, kind) }, modifier = Modifier.fillMaxWidth()) {
-                Text("Create project")
+            Button(
+                onClick = {
+                    if (vm.hasAiKey()) vm.createProject(name, kind, true) else needKey = true
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Create with AI") }
+            OutlinedButton(onClick = { vm.createProject(name, kind, false) }, modifier = Modifier.fillMaxWidth()) {
+                Text("Create empty project")
             }
+            Text(
+                "Create with AI opens a chat where NeoDev writes the whole project for you and changes it whenever you ask.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
+    }
+
+    if (needKey) {
+        AlertDialog(
+            onDismissRequest = { needKey = false },
+            title = { Text("Add your Gemini key first") },
+            text = { Text("NeoDev needs a Gemini key to chat and write your project. Add it in Settings, it's free.") },
+            confirmButton = {
+                TextButton(onClick = { needKey = false; vm.go(Screen.Settings) }) { Text("Open Settings") }
+            },
+            dismissButton = {
+                TextButton(onClick = { needKey = false; vm.createProject(name, kind, false) }) {
+                    Text("Create without AI")
+                }
+            }
+        )
     }
 }

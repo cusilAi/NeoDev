@@ -33,6 +33,12 @@ $gradleSetup"""
     /** Builds a debug APK and uploads it as an artifact. */
     fun androidApk(useWrapper: Boolean = false, jdk: Int = 17): String =
         header("Build Android APK", jdk, useWrapper) + """
+      - name: Keep the same signing key between builds
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: debug-keystore-${'$'}{{ github.repository }}
+
       - name: Build debug APK
         run: ${gradleCmd(useWrapper, "assembleDebug")}
 
